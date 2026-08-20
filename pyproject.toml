@@ -1,0 +1,16 @@
+[project]
+name = "finals-project"
+version = "0.1.0"
+description = "General purpose high-level physics simulation library for students."
+readme = "README.md"
+requires-python = ">=3.12.10"
+dependencies = [
+    "matplotlib>=3.11.1",
+    "moderngl>=5.12.0",
+    "numpy>=2.5.1",
+    "pandas>=3.0.5",
+    "pygame>=2.6.1",
+    "pyglm>=2.8.3",
+    "sympy>=1.14.0",
+    "vidmaker>=2.3.0",
+]
