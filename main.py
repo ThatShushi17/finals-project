@@ -1,7 +1,11 @@
 # TODO: remove some stuff in shaders/simulation/?
 
 import pygame
-from engine import App
+from src.engine import App
+
+def exit():
+	pygame.quit()
+	quit()
 
 window_size = (1600, 900)
 
@@ -15,10 +19,7 @@ pygame_flags = pygame.OPENGL | pygame.DOUBLEBUF #| pygame.RESIZABLE
 pygame.display.set_mode(window_size, pygame_flags)
 pygame.display.set_caption("Physics Simulation")
 
-app = App(window_size)
+app = App(window_size, exit)
 
-while app.running:
+while True:
 	app.tick()
-
-pygame.quit()
-quit()

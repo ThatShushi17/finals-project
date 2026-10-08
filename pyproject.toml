@@ -1,5 +1,5 @@
 [project]
-name = "finals-project"
+name = "finals_project"
 version = "0.1.0"
 description = "General purpose high-level physics simulation library for students."
 readme = "README.md"

@@ -5,7 +5,7 @@ import numpy as np
 import sympy as sp
 import pygame
 import pandas as pd
-from engine.shader_handler import load_shader
+from src.engine.shader_handler import load_shader
 from .simulation import Simulation
 from .schema import SimulationSchema
 

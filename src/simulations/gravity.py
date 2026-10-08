@@ -1,6 +1,6 @@
 import sympy as sp
-from engine.simulation.engine import CentralForceSimulation
-from engine.simulation.schema import SimulationSchema, SliderParam
+from src.engine.simulation.engine import CentralForceSimulation
+from src.engine.simulation.schema import SimulationSchema, SliderParam
 
 class GravitySimulation(CentralForceSimulation):
     @classmethod

@@ -1,12 +1,27 @@
 import pygame
-from ..core import Component, FrameData
+
+from ...simulation.simulation import Simulation
+from ...frame_data import FrameData
+from ..component import Component
+
+from ....types import Dual, Colorlike
+from ....enums import Position
 
 class Frame(Component):
-    def __init__(self, rel_pos, size, simulation=None, anchor=None, dock=None):
-        super().__init__(rel_pos, size, anchor=anchor, dock=dock)
+    def __init__(
+        self,
+        relative_position: Dual,
+        size: Dual,
+        simulation: Simulation | None = None,
+        background_color: Colorlike = (39, 39, 39),
+        border_color: Colorlike | None = (106, 73, 255),
+        anchor: Position = Position.CENTER,
+        dock: Position = Position.CENTER
+    ):
+        super().__init__(relative_position, size, anchor=anchor, dock=dock)
         self.simulation = simulation
-        self.background_color = (39, 39, 39)
-        self.border_color = (106, 73, 255)
+        self.background_color = background_color
+        self.border_color = border_color
         self.border_width = 2
         
         # Internal state ported from deprecated Viewport
@@ -43,11 +58,11 @@ class Frame(Component):
             if self.mouse_dx != 0 or self.mouse_dy != 0 or self.mouse_scroll != 0:
                 self.simulation.process_mouse(self.mouse_dx, self.mouse_dy, self.mouse_scroll)
                 
-            # Safely fetch dt based on your FrameData implementation
+            # FIXME: Safely fetch dt based on your FrameData implementation
             dt = getattr(frame_data, 'delta_time', getattr(frame_data, 'dt', 0.016))
             self.simulation.step(dt)
 
-    def draw(self, surf):
+    def draw(self, surf: pygame.Surface):
         clipped_rect = self.rect.clip(surf.get_rect())
         if clipped_rect.width <= 0 or clipped_rect.height <= 0:
             return

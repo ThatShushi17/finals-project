@@ -1,17 +1,21 @@
 import pygame
+import moderngl
 import os
 import importlib.util
 import pandas as pd
-from .components import Tab, Container, Axis, Position, Label, Button, Slider, Checkbox, TextInput, Frame, MatplotlibComponent
+
+from collections.abc import Callable
+
+from .components import Tab, Container, Axis, Position, Label, Button, Slider, Checkbox, TextInput, Frame, Plot
 from .font_handler import FontHandler
 from .menu_system import MenuSystem
 from ..simulation.simulation import Simulation
 from ..simulation.schema import SliderParam, CheckboxParam, TextParam
 
 class UIBuilder:
-    def __init__(self, menu_system: MenuSystem, ctx):
+    def __init__(self, menu_system: MenuSystem, ctx: moderngl.Context):
         self.menu_system = menu_system
-        self.ctx = ctx
+        self.ctx = ctx  # FIXME: remove
         self.frame = None
         self.energy_plot = None
         
@@ -24,20 +28,20 @@ class UIBuilder:
 
         self.simulation_tab = self._simulation_view_menu()
 
-    def create_ui(self, exit_callback):
+    def create_ui(self, exit_callback: Callable[[], None]):
         tab_handler = self.menu_system.tab_handler
         main_tab = Tab(tab_handler)
 
         settings_tab = self._settings_menu()
         select_simulation_tab = self._select_simulation_menu()
-        view_graphs_tab = self._view_graphs_menu()
+        _view_graphs_tab = self._view_graphs_menu()
 
         main_container = Container(Axis.VERTICAL, cross_percent=0.8)
         
         title_label = Label((0, 0), "Physics Demo", (255, 255, 255), FontHandler.load_font("Roboto-Regular.ttf", 40))
-        select_button = Button((0, 0), (200, 80), "Select Simulation", lambda *args, **kwargs: tab_handler.push(select_simulation_tab))
-        graphs_button = Button((0, 0), (200, 80), "View Graphs", lambda *args, **kwargs: tab_handler.push(self._view_graphs_menu()))
-        settings_button = Button((0, 0), (200, 80), "Settings", lambda *args, **kwargs: tab_handler.push(settings_tab))
+        select_button = Button((0, 0), (200, 80), "Select Simulation", lambda: tab_handler.push(select_simulation_tab))
+        graphs_button = Button((0, 0), (200, 80), "View Graphs", lambda: tab_handler.push(self._view_graphs_menu()))
+        settings_button = Button((0, 0), (200, 80), "Settings", lambda: tab_handler.push(settings_tab))
         exit_button = Button((0, 0), (200, 80), "Exit App", exit_callback)
     
         main_container.add_child(title_label, select_button, graphs_button, settings_button, exit_button)
@@ -67,7 +71,7 @@ class UIBuilder:
                 select_container.add_child(btn)
                 margins.append(10)
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda *args, **kwargs: tab_handler.pop(), font=font_label)
+        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
         select_container.add_child(back_button)
         margins.append(50)
 
@@ -106,7 +110,7 @@ class UIBuilder:
             graphs_container.add_child(empty_lbl)
             margins.append(20)
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda *args, **kwargs: tab_handler.pop(), font=font_label)
+        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
         graphs_container.add_child(back_button)
         margins.append(40)
 
@@ -114,7 +118,7 @@ class UIBuilder:
         graphs_tab.add_child(graphs_container)
         return graphs_tab
 
-    def _open_graph_detail(self, csv_filepath, filename):
+    def _open_graph_detail(self, csv_filepath: str, filename: str):
         tab_handler = self.menu_system.tab_handler
         detail_tab = Tab(tab_handler)
         detail_container = Container(Axis.VERTICAL, cross_percent=0.9)
@@ -122,8 +126,8 @@ class UIBuilder:
 
         title_label = Label((0, 0), f"Log: {filename}", (255, 255, 255), pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 24))
         
-        plot_comp = MatplotlibComponent(
-            rel_pos=(0, 0), 
+        plot_comp = Plot(
+            relative_position=(0, 0), 
             size=(700, 420), 
             anchor=Position.CENTER, 
             dock=Position.CENTER
@@ -154,7 +158,7 @@ class UIBuilder:
             except Exception as e:
                 print(f"Error loading CSV graph {csv_filepath}: {e}")
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda *args, **kwargs: tab_handler.pop(), font=font_label)
+        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
         
         detail_container.add_child(title_label, plot_comp, back_button)
         detail_container.define_margins(20, 20, 0)
@@ -162,7 +166,7 @@ class UIBuilder:
 
         tab_handler.push(detail_tab)
 
-    def _open_simulation_config(self, filepath):
+    def _open_simulation_config(self, filepath: str):
         config_tab = Tab(self.menu_system.tab_handler)
         config_container = Container(Axis.VERTICAL, cross_percent=0.8)
 
@@ -173,6 +177,7 @@ class UIBuilder:
         config_container.add_child(title_label)
 
         spec = importlib.util.spec_from_file_location("sim_module", filepath)
+        assert spec is not None and spec.loader is not None, f"Invalid module or missing loader for {filepath}"
         sim_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sim_module)
 
@@ -238,10 +243,10 @@ class UIBuilder:
         config_state["fps"] = self.target_fps
 
         launch_btn = Button((0, 0), (200, 50), "Create Simulation", 
-                            lambda *args, **kwargs: self._launch_simulation(sim_class, config_state), 
+                            lambda: self._launch_simulation(sim_class, config_state), 
                             font=font_label)
         back_btn = Button((0, 0), (120, 40), "Back", 
-                          lambda *args, **kwargs: self.menu_system.tab_handler.pop(), 
+                          lambda: self.menu_system.tab_handler.pop(), 
                           font=font_label)
 
         config_container.add_child(launch_btn, back_btn)
@@ -297,7 +302,7 @@ class UIBuilder:
         self.menu_system.tab_handler.pop() 
         self.menu_system.tab_handler.push(self.simulation_tab)
 
-    def _close_sim(self, tab):
+    def _close_sim(self, tab: Tab):
         if self.frame.simulation:
             self.frame.simulation.cleanup()
             self.frame.simulation = None
@@ -314,14 +319,14 @@ class UIBuilder:
         
         self.frame = Frame((0, 0), (700, 400))
         
-        self.energy_plot = MatplotlibComponent(
-            rel_pos=(0, 0), 
+        self.energy_plot = Plot(
+            relative_position=(0, 0), 
             size=(700, 200),  
             anchor=Position.CENTER, 
             dock=Position.CENTER
         )
         
-        back_button = Button((0, 0), (120, 40), "Back", lambda *args, **kwargs: self._close_sim(simulation_tab), font=font_label)
+        back_button = Button((0, 0), (120, 40), "Back", lambda: self._close_sim(simulation_tab), font=font_label)
         
         sim_container.add_child(self.frame, self.energy_plot, back_button)
         sim_container.define_margins(-50, -50, 0)
@@ -342,7 +347,7 @@ class UIBuilder:
         fps_slider = Slider((0, 0), 200, self.target_fps, (15, 144), 
                             on_change=lambda val: setattr(self, 'target_fps', int(val)))
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda *args, **kwargs: tab_handler.pop(), font=font_label)
+        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
 
         settings_container.add_child(title_label, fps_lbl, fps_slider, back_button)
         settings_container.define_margins(40, 30, 20, 40)

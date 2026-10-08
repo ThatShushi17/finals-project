@@ -1,5 +1,7 @@
 """Utility for loading shader files from disk."""
 
+# TODO: Delete this file
+
 from pathlib import Path
 
 

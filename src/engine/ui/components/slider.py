@@ -1,9 +1,26 @@
-from ..core import Component
 import pygame
 
+from collections.abc import Callable
+
+from ....types import Dual, Dualf
+from ....enums import Position
+
+from ...frame_data import FrameData
+from ..component import Component
+
+
 class Slider(Component):
-	def __init__(self, rel_pos, width, initial_value, value_range=(0.0, 1.0), on_change=None, anchor=None, dock=None):
-		super().__init__(rel_pos, (width, 20), anchor=anchor, dock=dock)
+	def __init__(
+		self,
+		relative_position: Dual,
+		width: int,
+		initial_value: float | int,
+		value_range: Dualf = (0.0, 1.0),
+		on_change: Callable[[float | int], None] = lambda x: None,
+		anchor: Position = Position.CENTER,
+		dock: Position = Position.CENTER
+	):
+		super().__init__(relative_position, (width, 20), anchor=anchor, dock=dock)
 		self.value_range = value_range
 		self.value = min(max(initial_value, value_range[0]), value_range[1])
 		self.on_change = on_change
@@ -15,7 +32,7 @@ class Slider(Component):
 		self.handle_color = (200, 200, 200)
 		self.hover_color = (255, 255, 255)
 
-	def _on_update(self, frame_data):
+	def _on_update(self, frame_data: FrameData):
 		self.is_hovered = self.rect.collidepoint(frame_data.mouse_pos)
 
 		for event in frame_data.events:
@@ -30,28 +47,26 @@ class Slider(Component):
 				if self.is_dragging:
 					self._update_value_from_mouse(frame_data.mouse_pos)
 
-	def _update_value_from_mouse(self, mouse_pos):
+	def _update_value_from_mouse(self, mouse_pos: Dual):
 		rel_x = mouse_pos[0] - self.rect.left
 		ratio = rel_x / self.rect.width
 		ratio = max(0.0, min(ratio, 1.0))
 		
 		new_value = self.value_range[0] + ratio * (self.value_range[1] - self.value_range[0])
-		
-		# Optional: check if range implies integers (e.g. both are ints)
+
 		if isinstance(self.value_range[0], int) and isinstance(self.value_range[1], int):
 			new_value = int(round(new_value))
 
 		if new_value != self.value:
 			self.value = new_value
-			if self.on_change:
-				self.on_change(self.value)
+			self.on_change(self.value)
 
-	def draw(self, surf):
-		# Draw track
+	def draw(self, surf: pygame.Surface):
+		# track
 		track_rect = pygame.Rect(self.rect.left, self.rect.centery - 2, self.rect.width, 4)
 		pygame.draw.rect(surf, self.track_color, track_rect)
 
-		# Draw handle
+		# handle
 		ratio = 0 if self.value_range[1] == self.value_range[0] else (self.value - self.value_range[0]) / (self.value_range[1] - self.value_range[0])
 		handle_x = self.rect.left + ratio * self.rect.width
 		

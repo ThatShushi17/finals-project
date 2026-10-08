@@ -6,7 +6,7 @@ from .slider import Slider
 from .checkbox import Checkbox
 from .text_input import TextInput
 from .frame import Frame
-from .plot import MatplotlibComponent
-from ..core import Position
+from .plot import Plot
+from ..component import Position
 
-__all__ = ["TabHandler", "Tab", "Container", "Axis", "Alignment", "Position", "Label", "Button", "Slider", "Checkbox", "TextInput", "Frame", "MatplotlibComponent"]
+__all__ = ["TabHandler", "Tab", "Container", "Axis", "Alignment", "Position", "Label", "Button", "Slider", "Checkbox", "TextInput", "Frame", "Plot"]
