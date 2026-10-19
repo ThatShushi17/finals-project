@@ -97,7 +97,7 @@ class Settings:
             return
         
         self.fps = Setting[int](60)
-        self.theme = Setting[str]("default_dark")
+        self.theme = Setting[str]("Default Dark")
         self.data_collection_interval = Setting[float](0.1)
         self.write_csv()
 
@@ -124,7 +124,6 @@ class Settings:
                 setting=self.data_collection_interval,
                 lower_bound=0.1,
                 upper_bound=5.0,
-                initial_only=True,
             ),
             "theme": DropdownDetails(
                 "Theme",
