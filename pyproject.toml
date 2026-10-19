@@ -12,5 +12,4 @@ dependencies = [
     "pygame>=2.6.1",
     "pyglm>=2.8.3",
     "sympy>=1.14.0",
-    "vidmaker>=2.3.0",
 ]

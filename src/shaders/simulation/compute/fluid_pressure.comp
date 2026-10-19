@@ -1,0 +1,40 @@
+#version 430
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+uniform sampler2D u_pressure;
+uniform sampler2D u_divergence;
+uniform sampler2D u_obstacles;
+uniform ivec2 u_size;
+layout(r32f, binding = 0) writeonly uniform image2D u_output_pressure;
+
+float pressure_at(ivec2 cell, float center) {
+    if (
+        any(lessThan(cell, ivec2(0)))
+        || any(greaterThanEqual(cell, u_size))
+        || texelFetch(u_obstacles, cell, 0).r > 0.5
+    ) {
+        return center;
+    }
+    return texelFetch(u_pressure, cell, 0).r;
+}
+
+void main() {
+    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(cell, u_size))) {
+        return;
+    }
+    if (texelFetch(u_obstacles, cell, 0).r > 0.5) {
+        imageStore(u_output_pressure, cell, vec4(0.0));
+        return;
+    }
+
+    float center = texelFetch(u_pressure, cell, 0).r;
+    float left = pressure_at(cell + ivec2(-1, 0), center);
+    float right = pressure_at(cell + ivec2(1, 0), center);
+    float down = pressure_at(cell + ivec2(0, -1), center);
+    float up = pressure_at(cell + ivec2(0, 1), center);
+    float divergence = texelFetch(u_divergence, cell, 0).r;
+    float pressure = (left + right + down + up - divergence) * 0.25;
+    imageStore(u_output_pressure, cell, vec4(pressure));
+}

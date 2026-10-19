@@ -18,6 +18,5 @@ pyrightconfig.json
 run_app*
 .run_app*
 .vscode
-recordings/*
-readings/*
-TODO.md
+data/misc/usersettings.csv
+data/readings/

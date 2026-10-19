@@ -11,7 +11,7 @@ class UIRenderer:
         self.ctx = ctx
         self.ui_tex = ui_tex
 
-        cwd = Path(__file__).parent
+        cwd = Path(__file__).resolve().parent
         frag_path = cwd.parent.parent / "shaders" / "ui" / "frag.frag"
         vert_path = cwd.parent.parent / "shaders" / "ui" / "vert.vert"
 

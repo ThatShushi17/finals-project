@@ -1,7 +1,5 @@
-# TODO: remove some stuff in shaders/simulation/?
-
 import pygame
-from src.engine import App
+from src.app import App
 
 def exit():
 	pygame.quit()
@@ -15,9 +13,9 @@ pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 4)
 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
 pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
 
-pygame_flags = pygame.OPENGL | pygame.DOUBLEBUF #| pygame.RESIZABLE
+pygame_flags = pygame.OPENGL | pygame.DOUBLEBUF #| pygame.FULLSCREEN
 pygame.display.set_mode(window_size, pygame_flags)
-pygame.display.set_caption("Physics Simulation")
+pygame.display.set_caption("Science Simulations")
 
 app = App(window_size, exit)
 

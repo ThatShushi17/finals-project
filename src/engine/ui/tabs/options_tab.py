@@ -1,6 +1,7 @@
 from ..components import Tab, TabHandler, Button, Label, Container
 
 from collections.abc import Callable
+import pygame
 
 class OptionsTab(Tab):
     def __int__(
@@ -16,4 +17,6 @@ class OptionsTab(Tab):
         self.title = Label((0, 0), title)
         self.container.add_child(self.title)
         for name, callback in zip(button_names, button_callbacks):
-            self.container.add_child(Button((0, 0), (1, 1), name, callback))
+            self.container.add_child(
+                Button((0, 0), 1, pygame.font.Font(None, 16), name, callback)
+            )

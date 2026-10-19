@@ -23,12 +23,32 @@ class Component:
 		self.parent: Component
 		self.margin_after: int
 		self.rect = pygame.Rect((0, 0), size)
+		self.offset: Dual = (0, 0)
+		self.personal_offset: Dual = (0, 0)
 
 	def _on_update(self, frame_data: FrameData):
 		pass
 
 	def _on_adoption(self):
 		pass
+
+	def _update_size(self):
+		pass
+
+	def get_content_width(self) -> int:
+		return self.rect.width
+
+	def set_offset(self, offset: Dual):
+		self.personal_offset = offset
+		self._update_offsets()
+
+	def _update_offsets(self):
+		self.offset = (
+			self.parent.offset[0] + self.personal_offset[0],
+			self.parent.offset[1] + self.personal_offset[1]
+		)
+		for child in self.children:
+			child._update_offsets()
 
 	def add_child(self, *children: "Component"):
 		for child in children:
@@ -37,18 +57,24 @@ class Component:
 			child._on_adoption()
 
 	def update(self, frame_data: FrameData):
+		self._update_size()
 		self._on_update(frame_data)
 
-		self.handle_position(frame_data)
+		self.offset = (
+			self.parent.offset[0] + self.personal_offset[0],
+			self.parent.offset[1] + self.personal_offset[1]
+		)
+
+		self.handle_position()
 		
 		for child in self.children:
 			child.update(frame_data)
 
 	def draw(self, surf: pygame.Surface):
-		for child in self.children:
+		for child in self.children[::-1]:
 			child.draw(surf)
 
-	def handle_position(self, frame_data: FrameData):
+	def handle_position(self):
 		if not self.is_self_positioned: return
 
 		new_position = self.relative_position

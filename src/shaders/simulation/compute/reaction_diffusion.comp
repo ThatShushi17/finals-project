@@ -1,0 +1,61 @@
+#version 430
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D u_current;
+layout(rg32f, binding = 1) writeonly uniform image2D u_next;
+
+uniform ivec2 u_grid_size;
+uniform float u_diffusion_a;
+uniform float u_diffusion_b;
+uniform float u_feed_rate;
+uniform float u_kill_rate;
+uniform float u_time_step;
+
+vec2 chemicals_at(ivec2 position) {
+    position = (position + u_grid_size) % u_grid_size;
+    return texelFetch(u_current, position, 0).rg;
+}
+
+vec2 laplacian(ivec2 position) {
+    vec2 center = chemicals_at(position);
+    vec2 axial =
+          chemicals_at(position + ivec2(-1,  0)) * 0.2
+        + chemicals_at(position + ivec2( 1,  0)) * 0.2
+        + chemicals_at(position + ivec2( 0, -1)) * 0.2
+        + chemicals_at(position + ivec2( 0,  1)) * 0.2;
+    vec2 diagonal =
+          chemicals_at(position + ivec2(-1, -1)) * 0.05
+        + chemicals_at(position + ivec2( 1, -1)) * 0.05
+        + chemicals_at(position + ivec2(-1,  1)) * 0.05
+        + chemicals_at(position + ivec2( 1,  1)) * 0.05;
+    return axial + diagonal - center;
+}
+
+void main() {
+    ivec2 position = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(position, u_grid_size))) {
+        return;
+    }
+
+    vec2 current = chemicals_at(position);
+    float reaction = current.r * current.g * current.g;
+    vec2 diffusion = laplacian(position);
+
+    float next_a = current.r + u_time_step * (
+        u_diffusion_a * diffusion.r
+        - reaction
+        + u_feed_rate * (1.0 - current.r)
+    );
+    float next_b = current.g + u_time_step * (
+        u_diffusion_b * diffusion.g
+        + reaction
+        - (u_kill_rate + u_feed_rate) * current.g
+    );
+
+    imageStore(
+        u_next,
+        position,
+        vec4(clamp(next_a, 0.0, 1.0), clamp(next_b, 0.0, 1.0), 0.0, 1.0)
+    );
+}

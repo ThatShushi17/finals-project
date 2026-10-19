@@ -1,182 +1,327 @@
-import pygame
+from __future__ import annotations
+
 import moderngl
-import os
 import importlib.util
 import pandas as pd
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from collections.abc import Callable
-
-from .components import Tab, Container, Axis, Position, Label, Button, Slider, Checkbox, TextInput, Frame, Plot
-from .font_handler import FontHandler
+from ...settings import Settings
+from .components import Button, Container, Label, Tab, Position, Frame, Plot
 from .menu_system import MenuSystem
-from ..simulation.simulation import Simulation
-from ..simulation.schema import SliderParam, CheckboxParam, TextParam
+
+from ...types import FiendCallback, SettingsSchema
+from ...enums import (
+    Alignment,
+    Axis,
+    TabStyles,
+    Accents,
+    HexFadeCorner,
+    TabBackgrounds,
+)
+
+if TYPE_CHECKING:
+    from ..simulation.simulation import Simulation
+
 
 class UIBuilder:
-    def __init__(self, menu_system: MenuSystem, ctx: moderngl.Context):
+    def __init__(self,
+        menu_system: MenuSystem,
+        ctx: moderngl.Context
+    ):
         self.menu_system = menu_system
-        self.ctx = ctx  # FIXME: remove
+        self.ctx = ctx
         self.frame = None
         self.energy_plot = None
-        
-        self.target_fps = 60
-        
-        self.time_data = []
-        self.ke_data = []
-        self.pe_data = []
-        self.te_data = []
+        self.active_simulation: Simulation | None = None
+        self.active_simulation_tab: Tab | None = None
+        self._simulation_cleanup_pending = False
 
-        self.simulation_tab = self._simulation_view_menu()
-
-    def create_ui(self, exit_callback: Callable[[], None]):
+    def create_ui(self, exit_callback: FiendCallback, settings: Settings):
         tab_handler = self.menu_system.tab_handler
-        main_tab = Tab(tab_handler)
 
-        settings_tab = self._settings_menu()
-        select_simulation_tab = self._select_simulation_menu()
-        _view_graphs_tab = self._view_graphs_menu()
+        main_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            None,
+            background=TabBackgrounds.MAIN
+        )
 
-        main_container = Container(Axis.VERTICAL, cross_percent=0.8)
-        
-        title_label = Label((0, 0), "Physics Demo", (255, 255, 255), FontHandler.load_font("Roboto-Regular.ttf", 40))
-        select_button = Button((0, 0), (200, 80), "Select Simulation", lambda: tab_handler.push(select_simulation_tab))
-        graphs_button = Button((0, 0), (200, 80), "View Graphs", lambda: tab_handler.push(self._view_graphs_menu()))
-        settings_button = Button((0, 0), (200, 80), "Settings", lambda: tab_handler.push(settings_tab))
-        exit_button = Button((0, 0), (200, 80), "Exit App", exit_callback)
-    
-        main_container.add_child(title_label, select_button, graphs_button, settings_button, exit_button)
-        main_container.define_margins(40, 30, 30, 30, 0)
-        main_tab.add_child(main_container)
+        settings_tab = self._settings_menu(main_tab, settings)
+        self.select_simulation_tab = self._select_simulation_menu(main_tab, settings)
+
+        title = Label(
+            relative_position=(0, 72),
+            text_source="Science Simulations",
+            font=self.menu_system.font_handler.get_bold(
+                int(self.menu_system.font_handler.default_size * 3)
+            ),
+            color="#FCFAF8",
+            anchor=Position.TOP_CENTER,
+            dock=Position.TOP_CENTER,
+        )
+        button_row = Container(
+            axis=Axis.HORIZONTAL,
+            cross_length=104,
+            alignment=Alignment.SPACE_AROUND,
+            background_color=None,
+            cross_padding=0,
+        )
+        button_row.relative_position = (0, -32)
+        button_row.anchor = Position.BOTTOM_CENTER
+        button_row.dock = Position.BOTTOM_CENTER
+        self.menu_system.add_button_list(
+            button_row,
+            ("Select Simulation", lambda: tab_handler.shove(self.select_simulation_tab), Accents.GREEN),
+            ("View Graphs", lambda: self._open_view_graphs(main_tab), Accents.GREEN),
+            ("Settings", lambda: tab_handler.shove(settings_tab), Accents.GREEN),
+            ("Exit App", exit_callback, Accents.PINK)
+        )
+        for button in button_row.children:
+            if isinstance(button, Button):
+                button.min_width = 240
+                button.margin_after = 28
+
+        main_tab.children.clear()
+        main_tab.add_child(title, button_row)
 
         tab_handler.push(main_tab)
 
-    def _select_simulation_menu(self):
-        tab_handler = self.menu_system.tab_handler
-        select_simulation_tab = Tab(tab_handler)
-        select_container = Container(Axis.VERTICAL, cross_percent=0.8)
-        
-        font_title = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 32)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
+    @staticmethod
+    def _readings_directory() -> Path:
+        return Path(__file__).resolve().parents[3] / "data" / "readings"
 
-        tab_name_label = Label((0, 0), "Choose Simulation", (255, 255, 255), font_title)
-        select_container.add_child(tab_name_label)
-        margins = [50]
+    @staticmethod
+    def _display_name(path: Path) -> str:
+        return path.stem.replace("_", " ").title()
 
-        sim_dir = "simulations"
-        if os.path.exists(sim_dir):
-            files = [f for f in os.listdir(sim_dir) if f.endswith(".py")]
-            for f in files:
-                filepath = os.path.join(sim_dir, f)
-                btn = Button((0, 0), (300, 50), f, lambda f=filepath: self._open_simulation_config(f), font=font_label)
-                select_container.add_child(btn)
-                margins.append(10)
+    def _open_view_graphs(self, main_tab: Tab) -> None:
+        graphs_tab = self._view_graphs_menu(main_tab)
+        self.menu_system.tab_handler.shove(graphs_tab)
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
-        select_container.add_child(back_button)
-        margins.append(50)
-
-        select_container.define_margins(*margins)
-        select_simulation_tab.add_child(select_container)
-
-        return select_simulation_tab
-
-    def _view_graphs_menu(self):
-        tab_handler = self.menu_system.tab_handler
-        graphs_tab = Tab(tab_handler)
-        graphs_container = Container(Axis.VERTICAL, cross_percent=0.8)
-        
-        font_title = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 32)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
-
-        title_label = Label((0, 0), "Saved Readings", (255, 255, 255), font_title)
-        graphs_container.add_child(title_label)
-        margins = [40]
-
-        readings_dir = "readings"
-        if os.path.exists(readings_dir):
-            csv_files = [f for f in os.listdir(readings_dir) if f.endswith(".csv")]
-            if csv_files:
-                for f in csv_files:
-                    filepath = os.path.join(readings_dir, f)
-                    btn = Button((0, 0), (320, 50), f, lambda path=filepath, filename=f: self._open_graph_detail(path, filename), font=font_label)
-                    graphs_container.add_child(btn)
-                    margins.append(10)
-            else:
-                empty_lbl = Label((0, 0), "No CSV logs found in readings/", (200, 200, 200), font_label)
-                graphs_container.add_child(empty_lbl)
-                margins.append(20)
-        else:
-            empty_lbl = Label((0, 0), "readings/ directory not found", (200, 200, 200), font_label)
-            graphs_container.add_child(empty_lbl)
-            margins.append(20)
-
-        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
-        graphs_container.add_child(back_button)
-        margins.append(40)
-
-        graphs_container.define_margins(*margins)
-        graphs_tab.add_child(graphs_container)
-        return graphs_tab
-
-    def _open_graph_detail(self, csv_filepath: str, filename: str):
-        tab_handler = self.menu_system.tab_handler
-        detail_tab = Tab(tab_handler)
-        detail_container = Container(Axis.VERTICAL, cross_percent=0.9)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
-
-        title_label = Label((0, 0), f"Log: {filename}", (255, 255, 255), pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 24))
-        
-        plot_comp = Plot(
-            relative_position=(0, 0), 
-            size=(700, 420), 
-            anchor=Position.CENTER, 
-            dock=Position.CENTER
+    def _view_graphs_menu(self, main_tab: Tab) -> Tab:
+        graphs_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            "Recorded Simulations",
+            background=TabBackgrounds.HEX,
+            accent=Accents.BLUE
         )
 
-        if os.path.exists(csv_filepath):
-            try:
-                df = pd.read_csv(csv_filepath)
-                steps = df["step"].values if "step" in df.columns else range(len(df))
-                ke = df["kinetic_energy"].values if "kinetic_energy" in df.columns else []
-                pe = df["potential_energy"].values if "potential_energy" in df.columns else []
-                te = df["total_energy"].values if "total_energy" in df.columns else []
-                
-                plot_comp.ax.clear()
-                if len(ke) > 0:
-                    plot_comp.ax.plot(steps, ke, label="Kinetic (K)", color="red")
-                if len(pe) > 0:
-                    plot_comp.ax.plot(steps, pe, label="Potential (U)", color="blue")
-                if len(te) > 0:
-                    plot_comp.ax.plot(steps, te, label="Total (E)", color="green", linestyle='--')
-                
-                plot_comp.ax.legend(loc="upper right", fontsize=8)
-                plot_comp.ax.set_title(f"Energy History: {filename}", fontsize=10)
-                plot_comp.ax.set_xlabel("Step", fontsize=8)
-                plot_comp.ax.set_ylabel("Energy", fontsize=8)
-                plot_comp.fig.tight_layout()
-                plot_comp.redraw()
-            except Exception as e:
-                print(f"Error loading CSV graph {csv_filepath}: {e}")
+        readings_dir = self._readings_directory()
+        simulation_directories = sorted(
+            (path for path in readings_dir.iterdir() if path.is_dir()),
+            key=lambda path: path.name.casefold(),
+        ) if readings_dir.is_dir() else []
+        buttons: list[tuple[str, FiendCallback | None, Accents]] = [
+            (
+                self._display_name(directory),
+                lambda d=directory, t=graphs_tab: self._open_recordings_menu(d, t),
+                Accents.BLUE,
+            )
+            for directory in simulation_directories
+        ]
+        buttons.append(
+            ("Back", lambda: self.menu_system.tab_handler.reverse_shove(), Accents.PINK)
+        )
+        self.menu_system.add_button_list(
+            graphs_tab.main_container,
+            *buttons,
+        )
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
-        
-        detail_container.add_child(title_label, plot_comp, back_button)
-        detail_container.define_margins(20, 20, 0)
-        detail_tab.add_child(detail_container)
+        return graphs_tab
 
-        tab_handler.push(detail_tab)
+    def _open_recordings_menu(self, simulation_directory: Path, parent_tab: Tab) -> None:
+        tab_handler = self.menu_system.tab_handler
+        recordings_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            f"{self._display_name(simulation_directory)} Recordings",
+            background=TabBackgrounds.HEX,
+            accent=Accents.BLUE,
+        )
+        self._populate_recordings_menu(simulation_directory, recordings_tab)
+        tab_handler.push_immediate(recordings_tab)
 
-    def _open_simulation_config(self, filepath: str):
-        config_tab = Tab(self.menu_system.tab_handler)
-        config_container = Container(Axis.VERTICAL, cross_percent=0.8)
+    def _populate_recordings_menu(
+        self,
+        simulation_directory: Path,
+        recordings_tab: Tab,
+    ) -> None:
+        tab_handler = self.menu_system.tab_handler
+        recordings = sorted(
+            (path for path in simulation_directory.glob("*.csv") if path.is_file()),
+            key=lambda path: path.name.casefold(),
+        )
+        buttons: list[tuple[str, FiendCallback | None, Accents]] = [
+            (
+                filepath.stem.replace("_", " ").title(),
+                lambda f=filepath, d=simulation_directory, t=recordings_tab: (
+                    self._open_graph_detail(f, d, t)
+                ),
+                Accents.BLUE,
+            )
+            for filepath in recordings
+        ]
+        buttons.append(
+            ("Back", lambda: tab_handler.pop_immediate(), Accents.PINK)
+        )
+        self.menu_system.add_button_list(recordings_tab.main_container, *buttons)
 
-        font_title = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 32)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
+    def _delete_recording(
+        self,
+        filepath: Path,
+        simulation_directory: Path,
+        recordings_tab: Tab,
+    ) -> None:
+        filepath.unlink()
+        recordings_tab.main_container.children.clear()
+        self._populate_recordings_menu(simulation_directory, recordings_tab)
+        self.menu_system.tab_handler.reverse_shove()
 
-        title_label = Label((0, 0), f"Configure: {os.path.basename(filepath)}", (255, 255, 255), font_title)
-        config_container.add_child(title_label)
+    def _get_recording_setting_names(self, simulation_directory: Path) -> set[str]:
+        simulation_file = (
+            Path(__file__).resolve().parents[2]
+            / "simulations"
+            / f"{simulation_directory.name}.py"
+        )
+        if not simulation_file.is_file():
+            return set()
 
-        spec = importlib.util.spec_from_file_location("sim_module", filepath)
+        module_name = f"_recorded_simulation_{simulation_directory.name}"
+        spec = importlib.util.spec_from_file_location(module_name, simulation_file)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load simulation module from {simulation_file}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        from ..simulation.simulation import Simulation
+
+        simulation_class = next(
+            (
+                candidate
+                for candidate in vars(module).values()
+                if isinstance(candidate, type)
+                and issubclass(candidate, Simulation)
+                and candidate.__module__ == module_name
+            ),
+            None,
+        )
+        if simulation_class is None:
+            raise ValueError(f"No Simulation subclass found in {simulation_file}")
+        return {
+            details.name
+            for details in simulation_class.get_schema().values()
+            if not details.initial_only
+        }
+
+    def _open_graph_detail(
+        self,
+        filepath: Path,
+        simulation_directory: Path,
+        parent_tab: Tab,
+    ) -> None:
+        dataframe = pd.read_csv(filepath)
+        time_column = (
+            "Simulation time (s)"
+            if "Simulation time (s)" in dataframe.columns
+            else None
+        )
+        x_values = (
+            dataframe[time_column].to_numpy()
+            if time_column is not None
+            else list(range(len(dataframe)))
+        )
+        x_label = "Simulation time (s)" if time_column else "Sample"
+        setting_names = self._get_recording_setting_names(simulation_directory)
+        numeric_columns = dataframe.select_dtypes(include="number").columns
+        setting_columns = [
+            column for column in numeric_columns
+            if column in setting_names
+        ]
+        metric_columns = [
+            column for column in numeric_columns
+            if column != time_column and column not in setting_columns
+        ]
+
+        detail_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            filepath.stem.replace("_", " ").title(),
+            background=TabBackgrounds.HEX,
+            accent=Accents.BLUE,
+            hex_fade_corner=HexFadeCorner.TOP_LEFT
+        )
+        metrics_plot = Plot((0, 0), height=250, anchor=Position.CENTER, dock=Position.CENTER)
+        metrics_plot.ax.set_title(f"{self._display_name(simulation_directory)} metrics")
+        metrics_plot.ax.set_xlabel(x_label)
+        metrics_plot.ax.set_ylabel("Metric value")
+        for column in metric_columns:
+            metrics_plot.ax.plot(x_values, dataframe[column].to_numpy(), label=column)
+        if metric_columns:
+            metrics_plot.ax.legend(loc="upper right", fontsize=8)
+
+        settings_plot = Plot((0, 0), height=250, anchor=Position.CENTER, dock=Position.CENTER)
+        settings_plot.ax.set_title("Settings over time")
+        settings_plot.ax.set_xlabel(x_label)
+        settings_plot.ax.set_ylabel("Normalized value (0-1)")
+        settings_plot.ax.set_ylim(0.0, 1.0)
+        for column in setting_columns:
+            settings_plot.ax.plot(x_values, dataframe[column].to_numpy(), label=column)
+        if setting_columns:
+            settings_plot.ax.legend(loc="upper right", fontsize=8)
+
+        metrics_plot.margin_after = 20
+        settings_plot.margin_after = 20
+        detail_tab.main_container.add_child(metrics_plot, settings_plot)
+        self.menu_system.add_button_list(
+            detail_tab.main_container,
+            (
+                "Delete Recording",
+                lambda f=filepath, d=simulation_directory, t=parent_tab: (
+                    self._delete_recording(f, d, t)
+                ),
+                Accents.PINK,
+            ),
+            ("Back", lambda: self.menu_system.tab_handler.reverse_shove(), Accents.PINK),
+        )
+        self.menu_system.tab_handler.shove(detail_tab)
+
+    def _select_simulation_menu(self, main_tab: Tab, settings: Settings):
+        tab_handler = self.menu_system.tab_handler
+
+        self.select_simulation_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            "Choose Simulation",
+            background=TabBackgrounds.HEX,
+            accent=Accents.ORANGE
+        )
+
+        buttons_tba: list[tuple[str, FiendCallback | None, Accents]] = []
+
+        sim_dir = Path(__file__).resolve().parent.parent.parent / "simulations"
+        if sim_dir.exists() and sim_dir.is_dir():
+            for filepath in sim_dir.glob("*.py"):
+                buttons_tba.append((filepath.stem.replace("_", " ").title(), lambda m=main_tab, s=settings, f=filepath: self._open_simulation_config(f, m, s), Accents.ORANGE))
+
+        buttons_tba.append(("Back", lambda: tab_handler.reverse_shove(), Accents.PINK))
+
+        self.menu_system.add_button_list(
+            self.select_simulation_tab.main_container,
+            *buttons_tba
+        )
+
+        return self.select_simulation_tab
+
+    def _open_simulation_config(self, filepath: Path, main_tab: Tab, settings: Settings):
+        from ..simulation.simulation import Simulation
+
+        config_tab = self.menu_system.new_tab(
+            TabStyles.TWO_CONTAINERS,
+            filepath.stem.replace("_", " ").title(),
+            background=TabBackgrounds.HEX,
+            accent=Accents.ORANGE,
+            hex_fade_corner=HexFadeCorner.TOP_LEFT,
+        )
+        config_tab.containers[0].background_color = self.menu_system.color_scheme.bg_bold
+
+        spec = importlib.util.spec_from_file_location("sim_module", str(filepath))
         assert spec is not None and spec.loader is not None, f"Invalid module or missing loader for {filepath}"
         sim_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sim_module)
@@ -193,163 +338,147 @@ class UIBuilder:
             return
 
         schema = sim_class.get_schema()
-        config_state = schema.get_defaults()
-
-        for param in schema.parameters:
-            name = param.name
-            label_text = param.label
-
-            if isinstance(param, SliderParam):
-                fmt = ".0f" if param.is_int else ".4f"
-                lbl = Label((0, 0), lambda n=name, l=label_text, f=fmt: f"{l}: {config_state[n]:{f}}", (200, 200, 200), font_label)
-                comp = Slider((0, 0), 200, config_state[name], (param.min_val, param.max_val), 
-                              on_change=lambda val, n=name: config_state.update({n: val}))
-                config_container.add_child(lbl, comp)
-                
-            elif isinstance(param, CheckboxParam):
-                lbl = Label((0, 0), lambda n=name, l=label_text: f"{l}: {config_state[n]}", (200, 200, 200), font_label)
-                comp = Checkbox((0, 0), (20, 20), initial_value=config_state[name], 
-                                on_change=lambda val, n=name: config_state.update({n: val}))
-                config_container.add_child(lbl, comp)
-                
-            elif isinstance(param, TextParam):
-                lbl = Label((0, 0), lambda n=name, l=label_text: f"{l}:", (200, 200, 200), font_label)
-                comp = TextInput((0, 0), (200, 30), initial_text=str(config_state[name]), 
-                                 on_change=lambda val, n=name: config_state.update({n: val}))
-                config_container.add_child(lbl, comp)
-
-        config_state["record_video"] = False
-        config_state["video_filename"] = "simulation_recording"
-
-        record_lbl = Label((0, 0), lambda: f"Record Video: {config_state['record_video']}", (200, 200, 200), font_label)
-        record_checkbox = Checkbox(
-            (0, 0), 
-            (20, 20), 
-            initial_value=config_state["record_video"], 
-            on_change=lambda val: config_state.update({"record_video": val})
+        user_settings_schema = settings.expose_schema()
+        schema["fps"] = user_settings_schema["fps"]
+        schema["data_collection_interval"] = user_settings_schema[
+            "data_collection_interval"
+        ]
+        self.menu_system.add_settings_from_schema(
+            config_tab.containers[0],
+            schema
         )
-        config_container.add_child(record_lbl, record_checkbox)
-
-        filename_lbl = Label((0, 0), "File Name:", (200, 200, 200), font_label)
-        filename_input = TextInput(
-            (0, 0),
-            (200, 30),
-            initial_text=config_state["video_filename"],
-            on_change=lambda val: config_state.update({"video_filename": val})
+        self.menu_system.add_button_list(
+            config_tab.containers[1],
+            (
+                "Launch Simulation",
+                lambda c=sim_class, s=schema, n=filepath.stem: self._launch_simulation(c, s, n),
+                Accents.GREEN,
+            ),
+            ("Back", lambda: self.menu_system.tab_handler.reverse_shove(), Accents.PINK)
         )
-        config_container.add_child(filename_lbl, filename_input)
 
-        # Inject global target FPS into config state
-        config_state["fps"] = self.target_fps
+        self.menu_system.tab_handler.shove(config_tab)
 
-        launch_btn = Button((0, 0), (200, 50), "Create Simulation", 
-                            lambda: self._launch_simulation(sim_class, config_state), 
-                            font=font_label)
-        back_btn = Button((0, 0), (120, 40), "Back", 
-                          lambda: self.menu_system.tab_handler.pop(), 
-                          font=font_label)
+    def _launch_simulation(
+        self,
+        sim_class: type[Simulation],
+        schema: SettingsSchema,
+        simulation_name: str | None = None,
+    ):
+        simulation_tab, frame, metric_plot, setting_plot = self._simulation_view_menu(schema)
 
-        config_container.add_child(launch_btn, back_btn)
-        
-        num_children = len(config_container.children)
-        margins = [10] * num_children
-        margins[0] = 30
-        margins[-3] = 40
-        config_container.define_margins(*margins)
+        simulation = sim_class(
+            ctx=self.ctx,
+            schema=schema,
+            color_scheme=self.menu_system.color_scheme,
+        )
+        simulation.simulation_name = (
+            simulation_name
+            if simulation_name is not None
+            else sim_class.__module__.rsplit(".", 1)[-1]
+        )
+        frame.simulation = simulation
+        self.active_simulation = simulation
+        self.active_simulation_tab = simulation_tab
+        self._simulation_cleanup_pending = False
+        metric_plot.set_live_data_source(
+            lambda: (
+                list(simulation.metric_history_times),
+                simulation.get_metric_series(),
+            ),
+            title=getattr(
+                simulation,
+                "METRIC_PLOT_TITLE",
+                f"{sim_class.__name__.removesuffix('Simulation')} metrics",
+            ),
+            revision_source=lambda: simulation.history_revision,
+        )
+        setting_plot.set_live_data_source(
+            lambda: (list(simulation.history_times), simulation.get_setting_series()),
+            title="Live simulation settings",
+            y_label="Normalized value (0-1)",
+            y_limits=(0.0, 1.0),
+            revision_source=lambda: simulation.history_revision,
+        )
+        self.menu_system.tab_handler.open(simulation_tab)
 
-        config_tab.add_child(config_container)
-        self.menu_system.tab_handler.push(config_tab)
+    def _close_sim(self):
+        self._simulation_cleanup_pending = True
+        self.menu_system.tab_handler.close_to(self.select_simulation_tab)
 
-    def _on_sim_state_update(self, state):
-        self.time_data.append(state.get("step", 0))
-        self.ke_data.append(state.get("kinetic_energy", 0))
-        self.pe_data.append(state.get("potential_energy", 0))
-        self.te_data.append(state.get("total_energy", 0))
+    def cleanup_active_simulation(self) -> None:
+        if self.active_simulation is None:
+            return
+        self.active_simulation.cleanup()
+        self.active_simulation = None
+        self.active_simulation_tab = None
+        self._simulation_cleanup_pending = False
 
-        if len(self.time_data) > 100:
-            self.time_data.pop(0)
-            self.ke_data.pop(0)
-            self.pe_data.pop(0)
-            self.te_data.pop(0)
+    def cleanup_inactive_simulation(self) -> None:
+        if (
+            self._simulation_cleanup_pending
+            and self.active_simulation_tab is not None
+            and not self.menu_system.tab_handler.is_active(
+                self.active_simulation_tab
+            )
+        ):
+            self.cleanup_active_simulation()
 
-        self.energy_plot.ax.clear()
-        self.energy_plot.ax.plot(self.time_data, self.ke_data, label="Kinetic (K)", color="red")
-        self.energy_plot.ax.plot(self.time_data, self.pe_data, label="Potential (U)", color="blue")
-        self.energy_plot.ax.plot(self.time_data, self.te_data, label="Total (E)", color="green", linestyle='--')
-        
-        self.energy_plot.ax.legend(loc="upper right", fontsize=8)
-        self.energy_plot.ax.set_title("System Energy over Time", fontsize=10)
-        self.energy_plot.fig.tight_layout()
-        self.energy_plot.redraw()
+    def _simulation_view_menu(self, schema: SettingsSchema):
+        simulation_tab = self.menu_system.new_tab(
+            TabStyles.TWO_CONTAINERS,
+            None,
+        )
 
-    def _launch_simulation(self, sim_class, config_state):
-        if self.frame.simulation:
-            self.frame.simulation.cleanup()
-
-        self.time_data.clear()
-        self.ke_data.clear()
-        self.pe_data.clear()
-        self.te_data.clear()
-        self.energy_plot.ax.clear()
-        self.energy_plot.redraw()
-
-        config_state["fps"] = self.target_fps
-        config_state["export_callback"] = self._on_sim_state_update
-        config_state["export_interval"] = 10 
-
-        self.frame.simulation = sim_class(self.ctx, config=config_state)
-        
-        self.menu_system.tab_handler.pop() 
-        self.menu_system.tab_handler.push(self.simulation_tab)
-
-    def _close_sim(self, tab: Tab):
-        if self.frame.simulation:
-            self.frame.simulation.cleanup()
-            self.frame.simulation = None
-            
-        self.energy_plot.ax.clear()
-        self.energy_plot.redraw()
-        
-        tab.handler.pop()
-
-    def _simulation_view_menu(self):
-        simulation_tab = Tab(self.menu_system.tab_handler)
-        sim_container = Container(Axis.VERTICAL, cross_percent=0.9)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
-        
-        self.frame = Frame((0, 0), (700, 400))
-        
-        self.energy_plot = Plot(
-            relative_position=(0, 0), 
-            size=(700, 200),  
+        frame = Frame(
+            relative_position=(0, 0),
+            height=400,
+            accent_color=lambda: self.menu_system.color_scheme.accent(Accents.PINK),
+        )
+        frame.margin_after = 30
+        metric_plot = Plot(
+            relative_position=(0, 0),
+            height=400,
             anchor=Position.CENTER, 
             dock=Position.CENTER
         )
-        
-        back_button = Button((0, 0), (120, 40), "Back", lambda: self._close_sim(simulation_tab), font=font_label)
-        
-        sim_container.add_child(self.frame, self.energy_plot, back_button)
-        sim_container.define_margins(-50, -50, 0)
-        simulation_tab.add_child(sim_container)
+        metric_plot.margin_after = 20
+        setting_plot = Plot(
+            relative_position=(0, 0),
+            height=400,
+            anchor=Position.CENTER,
+            dock=Position.CENTER,
+        )
+        setting_plot.margin_after = 20
 
-        return simulation_tab
 
-    def _settings_menu(self):
+        simulation_tab.containers[0].add_child(frame, metric_plot, setting_plot)
+
+        self.menu_system.add_settings_from_schema(
+            simulation_tab.containers[1],
+            schema=schema,
+            include_all=False
+        )
+        self.menu_system.add_button_list(
+            simulation_tab.containers[1],
+            ("Back", lambda: self._close_sim(), Accents.PINK)
+        )
+
+        return simulation_tab, frame, metric_plot, setting_plot
+
+    def _settings_menu(self, main_tab: Tab, settings: Settings):
         tab_handler = self.menu_system.tab_handler
-        settings_tab = Tab(tab_handler)
-        settings_container = Container(Axis.VERTICAL, cross_percent=0.8)
-        font_title = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 32)
-        font_label = pygame.font.Font("assets/fonts/Roboto-Regular.ttf", 16)
+        settings_tab = self.menu_system.new_tab(
+            TabStyles.ONE_CONTAINER,
+            "Settings",
+            background=TabBackgrounds.HEX,
+            accent=Accents.BLUE
+        )
 
-        title_label = Label((0, 0), "Settings", (255, 255, 255), font_title)
-        
-        fps_lbl = Label((0, 0), lambda: f"Simulation FPS: {int(self.target_fps)}", (200, 200, 200), font_label)
-        fps_slider = Slider((0, 0), 200, self.target_fps, (15, 144), 
-                            on_change=lambda val: setattr(self, 'target_fps', int(val)))
+        self.menu_system.add_settings_from_schema(settings_tab.main_container, settings.expose_schema())
+        self.menu_system.add_button_list(
+            settings_tab.main_container,
+            ("Back", lambda: tab_handler.reverse_shove(), Accents.PINK)
+        )
 
-        back_button = Button((0, 0), (120, 40), "Back", lambda: tab_handler.pop(), font=font_label)
-
-        settings_container.add_child(title_label, fps_lbl, fps_slider, back_button)
-        settings_container.define_margins(40, 30, 20, 40)
-        settings_tab.add_child(settings_container)
         return settings_tab

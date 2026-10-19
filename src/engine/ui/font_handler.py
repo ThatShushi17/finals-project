@@ -1,126 +1,78 @@
-"""
-Font loading and caching for the UI system.
-"""
-
 from pathlib import Path
 
 import pygame
 
+def _find_root():
+    cwd = Path(__file__).resolve().parent
 
-def _find_project_root() -> Path:
-    """Find the project root by searching for a project marker."""
-    current = Path(__file__).resolve().parent
+    while cwd != cwd.parent:
+        if (cwd / "pyproject.toml").is_file():
+            return cwd
 
-    while current != current.parent:
-        if (current / "pyproject.toml").is_file():
-            return current
+        cwd = cwd.parent
 
-        current = current.parent
-
-    raise FileNotFoundError(
-        "Could not find project root (no pyproject.toml found)."
-    )
-
+    raise FileNotFoundError("Could not find pyproject.toml at project root.")
 
 class FontHandler:
-    """Loads and caches fonts from the project's assets/fonts directory."""
+    font_dir = _find_root() / "assets" / "fonts"
 
-    _cache: dict[tuple[str, int], pygame.font.Font] = {}
-    _project_root: Path | None = None
+    def __init__(
+        self,
+        default_font: Path,  # TODO: sidequest, Callable[[], Path] then add to Settings
+        default_bold: Path,
+        default_size: int
+    ) -> None:
+        self.default_font = default_font
+        self.default_bold = default_bold
+        self.default_size = default_size
 
-    DEFAULT_SIZE = 32
+        self._font_paths: dict[str, Path] = {}
+        self._cache: dict[tuple[str, int], pygame.font.Font] = {}
+        
+        self.load_font(default_font, default_size)
+        self.load_font(default_bold, default_size)
 
-    @classmethod
-    def _ensure_initialized(cls) -> None:
-        """Ensure Pygame's font subsystem is initialized."""
-        if not pygame.font.get_init():
-            pygame.font.init()
+    def get_bold(self, size: int | None = None):
+        return self.get_font(self.default_bold, size if size is not None else self.default_size)
 
-    @classmethod
-    def _get_project_root(cls) -> Path:
-        """Return the project root, caching the result."""
-        if cls._project_root is None:
-            cls._project_root = _find_project_root()
+    def get_heading(self):
+        return self.get_bold(int(self.default_size * 1.8))
 
-        return cls._project_root
+    def get_font(self, font: str | Path | None = None, size: int | None = None) -> pygame.font.Font:
+        size = size if size is not None else self.default_size
+        font = font if font is not None else self.default_font
 
-    @classmethod
-    def load_font(
-        cls,
-        font_name: str,
-        size: int = 16,
-    ) -> pygame.font.Font:
-        """Load and cache a font from assets/fonts/."""
-        cls._ensure_initialized()
-
-        key = (font_name, size)
-
-        if key in cls._cache:
-            return cls._cache[key]
-
-        font_path = (
-            cls._get_project_root()
-            / "assets"
-            / "fonts"
-            / font_name
-        )
-
-        if not font_path.is_file():
-            available = cls._list_available_fonts()
-
-            raise FileNotFoundError(
-                f"Font not found: {font_path}\n"
-                f"Available fonts: {available}"
+        label = font if isinstance(font, str) else font.stem
+        
+        if (label, size) in self._cache:
+            return self._cache[label, size]
+        
+        elif isinstance(font, Path):
+            try:
+                return self.load_font(font, size)
+            except (FileNotFoundError, OSError, pygame.error):
+                if font == self.default_font:
+                    f = pygame.font.Font(None, size)
+                    if ("__TRUE_DEFAULT", size) not in self._cache:
+                        self._cache[("__TRUE_DEFAULT", size)] = f
+                    return f
+                else:
+                    return self.get_font(self.default_font, size)
+        elif label in self._font_paths:
+            return self.load_font(
+                self._font_paths[label],
+                size
             )
+        else:
+            return self.get_font(size=size)
 
+    def load_font(self, font_path: Path, size: int) -> pygame.font.Font:
+        if not font_path.is_file():
+            raise FileNotFoundError(f"font at {str(font_path)} not found.")
+
+        label = str(font_path.stem)
         font = pygame.font.Font(str(font_path), size)
-        cls._cache[key] = font
-
+        self._cache[(label, size)] = font
+        if label not in self._font_paths:
+            self._font_paths[label] = font_path
         return font
-
-    @classmethod
-    def default_font(cls) -> pygame.font.Font:
-        """Return the default UI font."""
-        cwd = Path(__file__).parent
-        root = cwd.parent.parent.parent
-        fontdir = root / "assets" / "fonts"
-        return cls.load_font(fontdir / "Roboto-Regular.ttf", cls.DEFAULT_SIZE)
-        # return cls.load_system_font(cls.DEFAULT_SIZE)
-
-    @classmethod
-    def load_system_font(
-        cls,
-        size: int = DEFAULT_SIZE,
-    ) -> pygame.font.Font:
-        """Load and cache Pygame's default system font."""
-        cls._ensure_initialized()
-
-        key = ("__default__", size)
-
-        if key not in cls._cache:
-            cls._cache[key] = pygame.font.Font(None, size)
-
-        return cls._cache[key]
-
-    @classmethod
-    def _list_available_fonts(cls) -> list[str]:
-        """Return the names of available font files."""
-        fonts_dir = (
-            cls._get_project_root()
-            / "assets"
-            / "fonts"
-        )
-
-        if not fonts_dir.is_dir():
-            return []
-
-        return [
-            path.name
-            for path in fonts_dir.iterdir()
-            if path.is_file()
-        ]
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Clear all cached fonts."""
-        cls._cache.clear()
