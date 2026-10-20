@@ -7,12 +7,23 @@ from src.engine.simulation.three.n_parts.solar_system import (
     PLANETARY_DATA_PATH,
     solar_system_initial_conditions,
 )
+from src.settings import Setting
 from src.simulations.ising import IsingSimulation
 from src.simulations.fluid_dynamics import FluidDynamicsSimulation
 from src.simulations.reaction_diffusion import ReactionDiffusionSimulation
 
 
 class TestIsingPresets(unittest.TestCase):
+    def test_discrete_preset_shape_compares_setting_values(self):
+        simulation = object.__new__(IsingSimulation)
+        simulation.grid_width = Setting(100)
+        simulation.grid_height = Setting(100)
+
+        grid = simulation._load_initial_grid("ordered_down")
+
+        self.assertEqual(grid.shape, (100, 100))
+        self.assertTrue(np.all(grid == 0))
+
     def test_bundled_presets_are_valid_binary_grids(self):
         preset_names = ("checkerboard", "ordered_down", "ordered_up", "stripes")
         schema = IsingSimulation.get_schema()

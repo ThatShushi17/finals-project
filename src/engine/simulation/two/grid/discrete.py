@@ -123,7 +123,7 @@ class DiscreteGridSimulation(Simulation2D):
         path = self.PRESET_PATH / f"{preset_name}.csv"
         grid = pd.read_csv(path, header=None).to_numpy(dtype=np.uint8)
 
-        expected_shape = (self.grid_height, self.grid_width)
+        expected_shape = (self.grid_height.value, self.grid_width.value)
         if grid.shape != expected_shape:
             raise ValueError(
                 f"Preset {path.name!r} has shape {grid.shape}; "

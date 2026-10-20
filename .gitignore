@@ -19,4 +19,7 @@ run_app*
 .run_app*
 .vscode
 data/misc/usersettings.csv
+data/misc/screenshots/
 data/readings/
+front.py
+front.png

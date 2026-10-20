@@ -1,6 +1,7 @@
-import pygame
-import moderngl as mgl
 from pathlib import Path
+
+import moderngl as mgl
+import pygame
 
 from .settings import Settings
 from .engine.ui import MenuSystem, UIBuilder, UIRenderer, FontHandler, ColorScheme
@@ -14,6 +15,7 @@ class App:
         cwd = Path(__file__).resolve().parent
         root = cwd.parent
         self.settings = Settings(root / "data" / "misc" / "usersettings.csv")
+        self.screenshot_dir = root / "data/misc/screenshots"
         
         def exit_app():
             self.ui_builder.cleanup_active_simulation()
@@ -54,10 +56,13 @@ class App:
     def tick(self) -> None:
         dt = self.clock.tick(self.settings.fps.value) / 1000
         self.frame_data.update(dt)
+        screenshot_requested = False
 
         for event in self.frame_data.events:
             if event.type == pygame.QUIT:
                 self.exit_callback()
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                screenshot_requested = True
     
         self.menu_system.update()
         self.ui_builder.cleanup_inactive_simulation()
@@ -71,3 +76,19 @@ class App:
         self.ui_renderer.vao.render(mgl.TRIANGLE_STRIP)
     
         pygame.display.flip()
+        if screenshot_requested:
+            self._save_screenshot()
+
+    def _save_screenshot(self) -> None:
+        width, height = self.ctx.screen.size
+        pixels = self.ctx.screen.read(
+            viewport=(0, 0, width, height),
+            components=3,
+            alignment=1,
+        )
+        image = pygame.image.frombytes(pixels, (width, height), "RGB")
+        image = pygame.transform.flip(image, False, True)
+
+        self.screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_number = len(tuple(self.screenshot_dir.glob("screenshot_*.png"))) + 1
+        pygame.image.save(image, self.screenshot_dir / f"screenshot_{screenshot_number}.png")
