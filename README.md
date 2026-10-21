@@ -12,6 +12,7 @@ no ai ""art"".
 
 ## Usage
 
+The project uses the [uv](https://docs.astral.sh/uv/) package manager. After installing it:
 ```bash
 cd finals-project
 uv sync
